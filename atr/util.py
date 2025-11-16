@@ -304,12 +304,13 @@ async def email_mid_from_thread_id(thread_id: str) -> tuple[str, str]:
 
 
 async def email_to_uid_map() -> dict[str, str]:
-    def get(entry: dict, prop: str) -> str | None:
-        if prop in entry:
-            values = entry[prop]
-            if values:
-                return values[0]
-        return None
+    def values(entry: dict, prop: str) -> list[str]:
+        raw_values = entry.get(prop, [])
+        if isinstance(raw_values, list):
+            return [v for v in raw_values if v]
+        if raw_values:
+            return [raw_values]
+        return []
 
     # Get all email addresses in LDAP
     conf = config.AppConfig()
@@ -327,12 +328,13 @@ async def email_to_uid_map() -> dict[str, str]:
     email_to_uid = {}
     for entry in ldap_params.results_list:
         uid = entry.get("uid", [""])[0]
-        if mail := get(entry, "mail"):
-            email_to_uid[mail.lower()] = uid.lower()
-        if alt_email := get(entry, "asf-altEmail"):
-            email_to_uid[alt_email.lower()] = uid.lower()
-        if committer_email := get(entry, "asf-committer-email"):
-            email_to_uid[committer_email.lower()] = uid.lower()
+        uid_lower = uid.lower()
+        for mail in values(entry, "mail"):
+            email_to_uid[mail.lower()] = uid_lower
+        for alt_email in values(entry, "asf-altEmail"):
+            email_to_uid[alt_email.lower()] = uid_lower
+        for committer_email in values(entry, "asf-committer-email"):
+            email_to_uid[committer_email.lower()] = uid_lower
     return email_to_uid
 
 
