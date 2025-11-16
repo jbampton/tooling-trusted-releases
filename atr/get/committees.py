@@ -21,16 +21,13 @@ import asfquart.base as base
 
 import atr.blueprints.get as get
 import atr.db as db
-import atr.forms as forms
+import atr.form as form
 import atr.models.sql as sql
+import atr.post as post
 import atr.shared as shared
 import atr.template as template
 import atr.util as util
 import atr.web as web
-
-
-class UpdateCommitteeKeysForm(forms.Typed):
-    submit = forms.submit("Regenerate KEYS file")
 
 
 @get.public("/committees")
@@ -65,6 +62,12 @@ async def view(session: web.Committer | None, name: str) -> str:
         algorithms=shared.algorithms,
         now=datetime.datetime.now(datetime.UTC),
         email_from_key=util.email_from_uid,
-        update_committee_keys_form=await UpdateCommitteeKeysForm.create_form(),
+        update_committee_keys_form=form.render(
+            model_cls=shared.keys.UpdateCommitteeKeysForm,
+            action=util.as_url(post.keys.keys),
+            submit_label="Regenerate KEYS file",
+            defaults={"committee_name": name},
+            empty=True,
+        ),
         is_standing=util.committee_is_standing(name),
     )
