@@ -47,7 +47,9 @@
            title="View vote email thread in the archive (opens in new window)">View archived vote thread <i class="bi bi-box-arrow-up-right ms-1"></i></a>
       </div>
     {% elif task_mid %}
-      <p class="mt-2 mb-0 text-muted ps-4">Could not retrieve archive URL for this message.</p>
+      <p class="mt-2 mb-0 text-muted ps-4">
+        Could not retrieve archive URL for this message. This is expected behaviour if the message was not sent to a public mailing list, and ATR will not be able to analyse the vote thread.
+      </p>
     {% endif %}
   {% else %}
     <p class="mb-0 text-muted">
