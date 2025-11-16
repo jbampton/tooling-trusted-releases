@@ -31,10 +31,7 @@ sys.path.append(".")
 import atr.config as config
 import atr.db as db
 import atr.storage as storage
-import atr.storage.types as types
 import atr.util as util
-
-TARGET_FINGERPRINT = "63db20dd87e4b34fcd9bbb0da9a14f22f57da182"
 
 
 def get(entry: dict, prop: str) -> str | None:
@@ -48,53 +45,6 @@ def get(entry: dict, prop: str) -> str | None:
 def print_and_flush(message: str) -> None:
     print(message)
     sys.stdout.flush()
-
-
-def log_target_key_debug(outcomes, committee_name: str, email_to_uid: dict[str, str]) -> None:  # noqa: C901
-    target = TARGET_FINGERPRINT.lower()
-    for result in outcomes.results():
-        key_model = result.key_model
-        if key_model.fingerprint == target:
-            status = getattr(result.status, "name", str(result.status))
-            print_and_flush(
-                f"DEBUG fingerprint={target} committee={committee_name} status={status} "
-                f"apache_uid={key_model.apache_uid} primary_uid={key_model.primary_declared_uid} "
-                f"secondary_uids={key_model.secondary_declared_uids}"
-            )
-            uids: list[str] = []
-            if key_model.primary_declared_uid:
-                uids.append(key_model.primary_declared_uid)
-            if key_model.secondary_declared_uids:
-                uids.extend(key_model.secondary_declared_uids)
-            for uid_value in uids:
-                email = util.email_from_uid(uid_value)
-                ldap_uid = email_to_uid.get(email) if email else None
-                mapped = None
-                if email and email.endswith("@apache.org"):
-                    mapped = email.removesuffix("@apache.org")
-                elif ldap_uid:
-                    mapped = ldap_uid
-                print_and_flush(
-                    f"DEBUG uid={uid_value} extracted_email={email} ldap_uid={ldap_uid} mapped_uid={mapped}"
-                )
-    for error in outcomes.errors():
-        fingerprint = None
-        apache_uid = None
-        primary_uid = None
-        secondary_uids = None
-        detail = str(error)
-        if isinstance(error, types.PublicKeyError):
-            key_model = error.key.key_model
-            fingerprint = key_model.fingerprint
-            apache_uid = key_model.apache_uid
-            primary_uid = key_model.primary_declared_uid
-            secondary_uids = key_model.secondary_declared_uids
-            detail = str(error.original_error)
-        if fingerprint == target:
-            print_and_flush(
-                f"DEBUG fingerprint={target} committee={committee_name} error={type(error).__name__} "
-                f"apache_uid={apache_uid} primary_uid={primary_uid} secondary_uids={secondary_uids} detail={detail}"
-            )
 
 
 @contextlib.contextmanager
@@ -161,7 +111,6 @@ async def keys_import(conf: config.AppConfig, asf_uid: str) -> None:
             wafa = write.as_foundation_admin(committee_name)
             keys_file_text = content.decode("utf-8", errors="replace")
             outcomes = await wafa.keys.ensure_associated(keys_file_text)
-            log_target_key_debug(outcomes, committee_name, email_to_uid)
             yes = outcomes.result_count
             no = outcomes.error_count
             if no:
