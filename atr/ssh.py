@@ -56,6 +56,7 @@ class SSHServer(asyncssh.SSHServer):
         """Called when a connection is established."""
         # Store connection for use in begin_auth
         self._conn = conn
+        self._github_asf_uid: str | None = None
         peer_addr = conn.get_extra_info("peername")[0]
         log.info(f"SSH connection received from {peer_addr}")
 
@@ -70,19 +71,16 @@ class SSHServer(asyncssh.SSHServer):
         """Begin authentication for the specified user."""
         log.info(f"Beginning auth for user {username}")
 
+        if username == "github":
+            log.info("GitHub authentication will use validate_public_key")
+            return True
+
         try:
             # Load SSH keys for this user from the database
             async with db.session() as data:
                 user_keys = await data.ssh_key(asf_uid=username).all()
-                # TODO: This should potentially be migrated to the storage interface
-                workflow_keys = await data.workflow_ssh_key(asf_uid=username).all()
-                now = int(time.time())
-                valid_workflow_keys = []
-                for workflow_key in workflow_keys:
-                    if workflow_key.expires > now:
-                        valid_workflow_keys.append(workflow_key)
 
-                if not (user_keys or valid_workflow_keys):
+                if not user_keys:
                     log.warning(f"No SSH keys found for user: {username}")
                     # Still require authentication, but it will fail
                     return True
@@ -91,8 +89,6 @@ class SSHServer(asyncssh.SSHServer):
                 auth_keys_lines = []
                 for user_key in user_keys:
                     auth_keys_lines.append(user_key.key)
-                for workflow_key in valid_workflow_keys:
-                    auth_keys_lines.append(workflow_key.key)
 
                 auth_keys_data = "\n".join(auth_keys_lines)
                 log.info(f"Loaded {len(user_keys)} SSH keys for user {username}")
@@ -115,6 +111,35 @@ class SSHServer(asyncssh.SSHServer):
         """Indicate whether public key authentication is supported."""
         return True
 
+    async def validate_public_key(self, username: str, key: asyncssh.SSHKey) -> bool:
+        # This method is not called when username is not "github"
+        # Also, this SSHServer.validate_public_key method does not perform signature verification
+        # The SSHServerConnection.validate_public_key method performs signature verification
+        if username != "github":
+            return False
+
+        fingerprint = key.get_fingerprint()
+
+        async with db.session() as data:
+            workflow_key = await data.workflow_ssh_key(fingerprint=fingerprint).get()
+            if workflow_key is None:
+                return False
+
+            now = int(time.time())
+            if workflow_key.expires < now:
+                return False
+
+            self._github_asf_uid = workflow_key.asf_uid
+            return True
+
+    def _get_asf_uid(self, process: asyncssh.SSHServerProcess) -> str:
+        username = process.get_extra_info("username")
+        if username == "github":
+            if self._github_asf_uid is None:
+                raise RsyncArgsError("GitHub authentication did not resolve ASF UID")
+            return self._github_asf_uid
+        return username
+
 
 async def server_start() -> asyncssh.SSHAcceptor:
     """Start the SSH server."""
@@ -128,10 +153,15 @@ async def server_start() -> asyncssh.SSHAcceptor:
         private_key.write_private_key(key_path)
         log.info(f"Generated SSH host key at {key_path}")
 
+    def process_factory(process: asyncssh.SSHServerProcess) -> asyncio.Task[None]:
+        connection = process.get_extra_info("connection")
+        server_instance = connection.get_owner()
+        return asyncio.create_task(_step_01_handle_client(process, server_instance))
+
     server = await asyncssh.create_server(
         SSHServer,
         server_host_keys=[key_path],
-        process_factory=_step_01_handle_client,
+        process_factory=process_factory,
         host=_CONFIG.SSH_HOST,
         port=_CONFIG.SSH_PORT,
         encoding=None,
@@ -168,10 +198,10 @@ def _output_stderr(process: asyncssh.SSHServerProcess, message: str) -> None:
         log.exception(f"Error writing to client stderr: {e}")
 
 
-async def _step_01_handle_client(process: asyncssh.SSHServerProcess) -> None:
+async def _step_01_handle_client(process: asyncssh.SSHServerProcess, server: SSHServer) -> None:
     """Process client command, validating and dispatching to read or write handlers."""
     try:
-        await _step_02_handle_safely(process)
+        await _step_02_handle_safely(process, server)
     except RsyncArgsError as e:
         return _fail(process, f"Error: {e}", None)
     except Exception as e:
@@ -179,8 +209,8 @@ async def _step_01_handle_client(process: asyncssh.SSHServerProcess) -> None:
         return _fail(process, f"Exception: {e}", None)
 
 
-async def _step_02_handle_safely(process: asyncssh.SSHServerProcess) -> None:
-    asf_uid = process.get_extra_info("username")
+async def _step_02_handle_safely(process: asyncssh.SSHServerProcess, server: SSHServer) -> None:
+    asf_uid = server._get_asf_uid(process)
     log.info(f"Handling command for authenticated user: {asf_uid}")
 
     if not process.command:
@@ -198,7 +228,7 @@ async def _step_02_handle_safely(process: asyncssh.SSHServerProcess) -> None:
     #######################################
     ### Calls _step_04_command_validate ###
     #######################################
-    project_name, version_name, release_obj = await _step_04_command_validate(process, argv, is_read_request)
+    project_name, version_name, release_obj = await _step_04_command_validate(process, argv, is_read_request, server)
     # The release object is only present for read requests
     release_name = sql.release_name(project_name, version_name)
 
@@ -214,7 +244,7 @@ async def _step_02_handle_safely(process: asyncssh.SSHServerProcess) -> None:
         #####################################################
         ### Calls _step_07b_process_validated_rsync_write ###
         #####################################################
-        await _step_07b_process_validated_rsync_write(process, argv, project_name, version_name)
+        await _step_07b_process_validated_rsync_write(process, argv, project_name, version_name, server)
 
 
 def _step_03_command_simple_validate(argv: list[str]) -> bool:
@@ -261,7 +291,7 @@ def _step_03_command_simple_validate(argv: list[str]) -> bool:
 
 
 async def _step_04_command_validate(
-    process: asyncssh.SSHServerProcess, argv: list[str], is_read_request: bool
+    process: asyncssh.SSHServerProcess, argv: list[str], is_read_request: bool, server: SSHServer
 ) -> tuple[str, str, sql.Release | None]:
     """Validate the path and user permissions for read or write."""
     ############################################
@@ -269,7 +299,7 @@ async def _step_04_command_validate(
     ############################################
     path_project, path_version = _step_05_command_path_validate(argv[-1])
 
-    ssh_uid = process.get_extra_info("username")
+    ssh_uid = server._get_asf_uid(process)
 
     async with db.session() as data:
         project = await data.project(name=path_project, status=sql.ProjectStatus.ACTIVE, _committee=True).get()
@@ -434,9 +464,10 @@ async def _step_07b_process_validated_rsync_write(
     argv: list[str],
     project_name: str,
     version_name: str,
+    server: SSHServer,
 ) -> None:
     """Handle a validated rsync write request."""
-    asf_uid = process.get_extra_info("username")
+    asf_uid = server._get_asf_uid(process)
     exit_status = 0
     release_name = sql.release_name(project_name, version_name)
 
