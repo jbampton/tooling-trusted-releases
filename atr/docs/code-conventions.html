@@ -167,6 +167,7 @@ if a or b:
 <p>Using <code>case _</code> breaks type checking in such situations.</p>
 <h3 id="use-f-string-interpolation-instead-of-printf-style-formatting">Use f-string interpolation instead of printf style formatting</h3>
 <p>This should be adhered to even in contexts where printf style is usually expected, such as in <code>log.info</code> calls, unless there is a reason not to, such as when there are specific printf style flags which have no f-string equivalent.</p>
+<p>This convention is not enforced by any checks. Enforcement is via code review. See <a href="https://github.com/apache/tooling-trusted-releases/issues/339">issue #339</a> for a discussion.</p>
 <h2 id="html">HTML</h2>
 <h3 id="use-sentence-case-for-headings-form-labels-and-submission-buttons">Use sentence case for headings, form labels, and submission buttons</h3>
 <p>We write headings, form labels, and submission buttons in the form "This is some text", and not "This is Some Text" or "This Is Some Text". This follows the <a href="https://en.wikipedia.org/wiki/Wikipedia:Manual_of_Style#Section_headings">Wikipedia style for headings</a>.</p>
