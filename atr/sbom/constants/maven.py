@@ -17,10 +17,7 @@
 
 from __future__ import annotations
 
-import pathlib
 from typing import Final
-
-CACHE_PATH: Final[pathlib.Path] = pathlib.Path("/tmp/sbomtool-cache.json")
 
 PLUGIN_VERSIONS: Final[dict[str, str]] = {
     "2024-11-28T21:29:12Z": "2.9.1",
@@ -76,3 +73,5 @@ PLUGIN_VERSIONS: Final[dict[str, str]] = {
     "2018-05-24T23:24:10Z": "1.0.1",
     "2018-05-02T16:34:05Z": "1.0.0",
 }
+
+USE_CACHE: Final[bool] = True

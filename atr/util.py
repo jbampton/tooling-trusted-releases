@@ -170,7 +170,7 @@ async def async_temporary_directory(
         try:
             await aioshutil.rmtree(temp_dir_path)
         except Exception:
-            pass
+            log.exception(f"Failed to remove temporary directory {temp_dir_path}")
 
 
 def chmod_directories(path: pathlib.Path, permissions: int = 0o755) -> None:

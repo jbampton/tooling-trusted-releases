@@ -112,7 +112,16 @@ extend-exclude = [
 ]
 
 [tool.ruff.lint]
-ignore = []
+ignore = [
+  "S101", # assert
+  "S104", # interfaces
+  "S106", # password keyword
+  "S314", # old expat concerns
+  "S603", # subprocess.run
+  "S607", # partial path
+  "S608", # SQL string query
+  "S704", # markupsafe
+]
 select = [
   "ASYNC", # flake8-async
   "C90",   # cyclomatic-complexity
@@ -121,6 +130,7 @@ select = [
   "I",     # isort
   "N",     # pep8-naming
   "RUF",   # ruff-checks
+  "S",     # flake8-bandit
   "TC",    # flake8-type-checking
   "TID",   # flake8-tidy-imports
   "UP",    # pyupgrade

@@ -18,26 +18,34 @@
 from __future__ import annotations
 
 import datetime
-from typing import Any
+import pathlib
+import tempfile
+from typing import Any, Final
 
 import yyjson
 
 from . import constants, models
 
+_CACHE_PATH: Final[pathlib.Path] = pathlib.Path(tempfile.gettempdir()) / "sbomtool-cache.json"
+
 
 def cache_read() -> dict[str, Any]:
+    if not constants.maven.USE_CACHE:
+        return {}
     try:
-        with open(constants.maven.CACHE_PATH) as file:
+        with open(_CACHE_PATH) as file:
             return yyjson.load(file)
     except Exception:
         return {}
 
 
 def cache_write(cache: dict[str, Any]) -> None:
+    if not constants.maven.USE_CACHE:
+        return
     try:
-        with open(constants.maven.CACHE_PATH, "w") as file:
+        with open(_CACHE_PATH, "w") as file:
             yyjson.dump(cache, file)
-    except Exception:
+    except FileNotFoundError:
         pass
 
 
