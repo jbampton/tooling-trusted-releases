@@ -29,13 +29,23 @@ import atr.web as web
 
 
 @post.committer("/revisions/<project_name>/<version_name>")
-@post.form(shared.revisions.SetRevisionForm)
+@post.form(shared.revisions.RevisionForm)
 async def selected_post(
+    session: web.Committer, revision_form: shared.revisions.RevisionForm, project_name: str, version_name: str
+) -> web.WerkzeugResponse:
+    await session.check_access(project_name)
+
+    match revision_form:
+        case shared.revisions.SetRevisionForm():
+            return await _set_revision(session, revision_form, project_name, version_name)
+        case shared.revisions.SetTagForm():
+            return await _set_tag(session, revision_form, project_name, version_name)
+
+
+async def _set_revision(
     session: web.Committer, set_revision_form: shared.revisions.SetRevisionForm, project_name: str, version_name: str
 ) -> web.WerkzeugResponse:
     """Set a specific revision as the latest for a candidate draft or release preview."""
-    await session.check_access(project_name)
-
     selected_revision_number = set_revision_form.revision_number
 
     async with db.session() as data:
@@ -72,3 +82,29 @@ async def selected_post(
             project_name=project_name,
             version_name=version_name,
         )
+
+
+async def _set_tag(
+    session: web.Committer, set_tag_form: shared.revisions.SetTagForm, project_name: str, version_name: str
+) -> web.WerkzeugResponse:
+    """Set a tag on a specific revision."""
+    revision_number = set_tag_form.revision_number
+    tag = set_tag_form.tag.strip() or None
+
+    async with db.session() as data:
+        release = await session.release(project_name, version_name, phase=None, data=data)
+        revision = await data.revision(release_name=release.name, number=revision_number).demand(
+            base.ASFQuartException(f"Revision {revision_number} not found", errorcode=404)
+        )
+        revision.tag = tag
+        await data.commit()
+
+    message = (
+        f"Tag '{tag}' set for revision {revision_number}" if tag else f"Tag removed from revision {revision_number}"
+    )
+    return await session.redirect(
+        get.revisions.selected,
+        success=message,
+        project_name=project_name,
+        version_name=version_name,
+    )

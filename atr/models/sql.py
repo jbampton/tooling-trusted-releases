@@ -1052,6 +1052,7 @@ class Revision(sqlmodel.SQLModel, table=True):
     child: Optional["Revision"] = sqlmodel.Relationship(back_populates="parent")
 
     description: str | None = sqlmodel.Field(default=None, **example("This is a description"))
+    tag: str | None = sqlmodel.Field(default=None, **example("rc1"))
 
     def model_post_init(self, _context):
         if isinstance(self.created, str):

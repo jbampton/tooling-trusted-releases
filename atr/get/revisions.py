@@ -20,6 +20,7 @@ import pathlib
 
 import aiofiles.os
 import asfquart.base as base
+import htpy
 import sqlalchemy.orm as orm
 import sqlmodel
 
@@ -32,6 +33,7 @@ import atr.get.root as root
 import atr.htm as htm
 import atr.models.schema as schema
 import atr.models.sql as sql
+import atr.post as post
 import atr.shared as shared
 import atr.template as template
 import atr.util as util
@@ -245,6 +247,7 @@ def _render_revision_card(
                 card_body.p(".small.text-muted.mb-2")["Initial revision"]
 
             _render_files_diff(card_body, files_diff)
+            _render_tag_form(card_body, revision, project_name, version_name)
 
             is_draft = phase_key == "draft"
             revision_is_preview = revision.phase.value.lower() == "release_preview"
@@ -260,8 +263,9 @@ def _render_revision_header(revision: sql.Revision, latest_revision_number: str 
     if revision.number == latest_revision_number:
         badges.append(htm.span(".badge.bg-primary.ms-2")["Current"])
 
+    display_label = f"{revision.number} ({revision.tag})" if revision.tag else revision.number
     return htm.h2(".fs-6.my-2.mx-0.p-0.border-0.atr-sans")[
-        htm.a(".fw-bold.text-decoration-none.text-body", href=f"#{revision.number}")[revision.number],
+        htm.a(".fw-bold.text-decoration-none.text-body", href=f"#{revision.number}")[display_label],
         *badges,
     ]
 
@@ -273,6 +277,18 @@ def _render_revision_timestamp(revision: sql.Revision) -> htm.Element:
         timestamp = "Invalid timestamp"
 
     return htm.span(".fs-6.text-muted")[f"{timestamp} by {revision.asfuid}"]
+
+
+def _render_tag_form(body: htm.Block, revision: sql.Revision, project_name: str, version_name: str) -> None:
+    body.h3(".fs-6.fw-semibold.mt-3.atr-sans")["Tag"]
+    action_url = util.as_url(post.revisions.selected_post, project_name=project_name, version_name=version_name)
+    body.form(".d-flex.align-items-center.gap-2.mt-2.w-50", method="post", action=action_url)[
+        form.csrf_input(),
+        htpy.input(type="hidden", name="variant", value="set_tag"),
+        htpy.input(type="hidden", name="revision_number", value=revision.number),
+        htpy.input(".form-control.form-control-sm", type="text", name="tag", value=revision.tag or ""),
+        htpy.button(".btn.btn-sm.btn-outline-primary.text-nowrap", type="submit")["Set tag"],
+    ]
 
 
 async def _revision_files_diff(
